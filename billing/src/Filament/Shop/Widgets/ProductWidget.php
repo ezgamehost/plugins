@@ -2,8 +2,12 @@
 
 namespace Boy132\Billing\Filament\Shop\Widgets;
 
+use Boy132\Billing\Models\Customer;
+use Boy132\Billing\Models\Order;
 use Boy132\Billing\Models\Product;
 use Filament\Actions\Action;
+use Filament\Actions\Concerns\InteractsWithActions;
+use Filament\Actions\Contracts\HasActions;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
@@ -13,8 +17,9 @@ use Filament\Schemas\Schema;
 use Filament\Widgets\Widget;
 use Illuminate\Support\Number;
 
-class ProductWidget extends Widget implements HasSchemas
+class ProductWidget extends Widget implements HasActions, HasSchemas
 {
+    use InteractsWithActions;
     use InteractsWithSchemas;
 
     protected string $view = 'billing::widget';
@@ -28,9 +33,21 @@ class ProductWidget extends Widget implements HasSchemas
         foreach ($this->product->prices as $price) {
             $actions[] = Action::make($price->name)
                 ->label($price->interval_value . ' ' . $price->interval_type->getLabel() . ' - ' . $price->formatCost())
-                ->url(function () {
-                    // TODO
-                    return null;
+                ->action(function () use ($price) {
+                    $price->sync();
+
+                    /** @var Customer $customer */
+                    $customer = Customer::firstOrCreate([
+                        'user_id' => user()->id,
+                    ]);
+
+                    /** @var Order $order */
+                    $order = Order::create([
+                        'customer_id' => $customer->id,
+                        'product_price_id' => $price->id,
+                    ]);
+
+                    return $this->redirect($order->getCheckoutSession()->url);
                 }, true);
         }
 

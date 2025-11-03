@@ -34,9 +34,4 @@ class EditProduct extends EditRecord
             PriceRelationManager::class,
         ];
     }
-
-    protected function afterSave(): void
-    {
-        $this->record->sync();
-    }
 }

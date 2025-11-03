@@ -58,6 +58,28 @@ class Product extends Model
         ];
     }
 
+    protected static function boot(): void
+    {
+        parent::boot();
+
+        static::created(function (self $model) {
+            $model->sync();
+        });
+
+        static::updated(function (self $model) {
+            $model->sync();
+        });
+
+        static::deleted(function (self $model) {
+            if (!is_null($model->stripe_id)) {
+                /** @var StripeClient $stripeClient */
+                $stripeClient = app(StripeClient::class); // @phpstan-ignore myCustomRules.forbiddenGlobalFunctions
+
+                $stripeClient->products->delete($model->stripe_id);
+            }
+        });
+    }
+
     public function prices(): HasMany
     {
         return $this->hasMany(ProductPrice::class, 'product_id');
@@ -87,10 +109,6 @@ class Product extends Model
                 'name' => $this->name,
                 'description' => $this->description,
             ]);
-        }
-
-        foreach ($this->prices as $price) {
-            $price->sync();
         }
     }
 }

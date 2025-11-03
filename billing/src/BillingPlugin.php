@@ -28,7 +28,7 @@ class BillingPlugin implements HasPluginSettings, Plugin
         $panel->discoverWidgets(plugin_path($this->getId(), "src/Filament/$id/Widgets"), "Boy132\\Billing\\Filament\\$id\\Widgets");
 
         if ($panel->getId() === 'app') {
-            $panel->path('app');
+            $panel->path('servers');
         }
     }
 

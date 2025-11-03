@@ -36,6 +36,19 @@ class ProductPrice extends Model
         ];
     }
 
+    protected static function boot(): void
+    {
+        parent::boot();
+
+        static::created(function (self $model) {
+            $model->sync();
+        });
+
+        static::updated(function (self $model) {
+            $model->sync();
+        });
+    }
+
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'product_id');
@@ -43,6 +56,8 @@ class ProductPrice extends Model
 
     public function sync(): void
     {
+        $this->product->sync();
+
         /** @var StripeClient $stripeClient */
         $stripeClient = app(StripeClient::class); // @phpstan-ignore myCustomRules.forbiddenGlobalFunctions
 
@@ -62,16 +77,13 @@ class ProductPrice extends Model
                 'stripe_id' => $stripePrice->id,
             ]);
         } else {
-            $stripeClient->prices->update($this->stripe_id, [
-                'currency' => config('billing.currency'),
-                'nickname' => $this->name,
-                'product' => $this->product->stripe_id,
-                'recurring' => [
-                    'interval' => $this->interval_type->value,
-                    'interval_count' => $this->interval_value,
-                ],
-                'unit_amount' => $this->cost,
-            ]);
+            $stripePrice = $stripeClient->prices->retrieve($this->stripe_id);
+
+            // You can't update price objects on stripe, so check for changes and recreate the price if needed
+            if ($stripePrice->product !== $this->product->stripe_id || $stripePrice->unit_amount !== $this->cost || $stripePrice->recurring->interval !== $this->interval_type->value || $stripePrice->recurring->interval_count !== $this->interval_value) {
+                $this->stripe_id = null;
+                $this->sync();
+            }
         }
     }
 

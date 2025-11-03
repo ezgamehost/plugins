@@ -9,11 +9,15 @@ use App\Services\Servers\ServerCreationService;
 use App\Services\Servers\SuspensionService;
 use Boy132\Billing\Enums\OrderStatus;
 use Exception;
+use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Stripe\Checkout\Session;
+use Stripe\StripeClient;
 
 /**
  * @property int $id
+ * @property ?string $stripe_id
  * @property OrderStatus $status
  * @property int $customer_id
  * @property Customer $customer
@@ -25,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Order extends Model
 {
     protected $fillable = [
+        'stripe_id',
         'status',
         'customer_id',
         'product_price_id',
@@ -53,6 +58,37 @@ class Order extends Model
         return $this->BelongsTo(Server::class, 'server_id');
     }
 
+    public function getCheckoutSession(): Session
+    {
+        /** @var StripeClient $stripeClient */
+        $stripeClient = app(StripeClient::class); // @phpstan-ignore myCustomRules.forbiddenGlobalFunctions
+
+        if (is_null($this->stripe_id)) {
+            $session = $stripeClient->checkout->sessions->create([
+                'customer_email' => $this->customer->user->email,
+                'success_url' => route('billing.checkout.success') . '?session_id={CHECKOUT_SESSION_ID}',
+                'cancel_url' => route('billing.checkout.cancel') . '?session_id={CHECKOUT_SESSION_ID}',
+                'return_url' => Filament::getPanel('shop')->getUrl(),
+                'line_items' => [
+                    [
+                        'price' => $this->productPrice->stripe_id,
+                        'quantity' => 1,
+                    ],
+                ],
+                'mode' => 'payment',
+                'ui_mode' => 'hosted',
+            ]);
+
+            $this->update([
+                'stripe_id' => $session->id,
+            ]);
+
+            return $session;
+        }
+
+        return $stripeClient->checkout->sessions->retrieve($this->stripe_id);
+    }
+
     public function activate(): void
     {
         $this->status = OrderStatus::Active;
@@ -60,7 +96,7 @@ class Order extends Model
 
         try {
             if ($this->server) {
-                app(SuspensionService::class)->handle($this->server, SuspendAction::Unsuspend); // @phpstan-ignore-line
+                app(SuspensionService::class)->handle($this->server, SuspendAction::Unsuspend); // @phpstan-ignore myCustomRules.forbiddenGlobalFunctions
             } else {
                 $this->createServer();
             }
@@ -73,7 +109,7 @@ class Order extends Model
     {
         try {
             if ($this->server) {
-                app(SuspensionService::class)->handle($this->server, SuspendAction::Suspend); // @phpstan-ignore-line
+                app(SuspensionService::class)->handle($this->server, SuspendAction::Suspend); // @phpstan-ignore myCustomRules.forbiddenGlobalFunctions
             }
         } catch (Exception $exception) {
             report($exception);
@@ -83,7 +119,7 @@ class Order extends Model
         $this->save();
     }
 
-    public function createServer(): Server
+    private function createServer(): Server
     {
         if ($this->server) {
             return $this->server;
@@ -119,9 +155,7 @@ class Order extends Model
         $object->setTags([]);
         $object->setPorts($product->ports);
 
-        /** @var ServerCreationService $service */
-        $service = app(ServerCreationService::class); // @phpstan-ignore-line
-        $server = $service->handle($data, $object);
+        $server = app(ServerCreationService::class)->handle($data, $object); // @phpstan-ignore myCustomRules.forbiddenGlobalFunctions
 
         $this->server_id = $server->id;
         $this->save();

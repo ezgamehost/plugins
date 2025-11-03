@@ -26,9 +26,4 @@ class CreateProduct extends CreateRecord
             $this->getCreateFormAction()->formId('form'),
         ];
     }
-
-    protected function afterCreate(): void
-    {
-        $this->record->sync();
-    }
 }
