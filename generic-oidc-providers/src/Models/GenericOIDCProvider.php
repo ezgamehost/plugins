@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $client_id
  * @property string $client_secret
  * @property bool $verify_jwt
+ * @property bool $use_jwks_discovery
  * @property ?string $jwt_public_key
  */
 class GenericOIDCProvider extends Model
@@ -34,6 +35,7 @@ class GenericOIDCProvider extends Model
         'client_id',
         'client_secret',
         'verify_jwt',
+        'use_jwks_discovery',
         'jwt_public_key',
     ];
 
@@ -45,6 +47,7 @@ class GenericOIDCProvider extends Model
             'client_id' => 'encrypted',
             'client_secret' => 'encrypted',
             'verify_jwt' => 'bool',
+            'use_jwks_discovery' => 'bool',
         ];
     }
 }

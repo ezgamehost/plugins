@@ -8,5 +8,7 @@ return [
     'display_icon' => 'Display Icon',
     'base_url' => 'Base URL',
     'verify_jwt' => 'Verify JWT?',
+    'use_jwks_discovery' => 'Use JWKS Discovery?',
+    'use_jwks_discovery_help' => 'Automatically discover public keys from the .well-known/openid-configuration endpoint.',
     'jwt_public_key' => 'JWT Public Key',
 ];
