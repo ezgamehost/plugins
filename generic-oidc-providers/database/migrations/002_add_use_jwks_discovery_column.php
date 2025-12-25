@@ -9,7 +9,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('generic_oidc_providers', function (Blueprint $table) {
-            $table->boolean('use_jwks_discovery')->default(true)->after('verify_jwt');
+            // Default to false for backwards compatibility: existing providers that have a manually
+            // configured jwt_public_key should not be forced into JWKS discovery behavior.
+            $table->boolean('use_jwks_discovery')->default(false)->after('verify_jwt');
         });
     }
 

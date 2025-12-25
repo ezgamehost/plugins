@@ -37,10 +37,14 @@ final class GenericOIDCProviderSchema extends OAuthSchema
             if ($this->model->use_jwks_discovery) {
                 // Use JWKS discovery to get the public keys
                 $config['jwks_uri'] = JWKSDiscovery::getJWKSUri($this->model->base_url);
-                $config['jwt_public_keys'] = JWKSDiscovery::getPublicKeys($this->model->base_url);
+                $discoveredKeys = JWKSDiscovery::getPublicKeys($this->model->base_url);
+                $config['jwt_public_keys'] = $discoveredKeys;
 
-                // For backwards compatibility, also set jwt_public_key to the first key
-                $config['jwt_public_key'] = JWKSDiscovery::getFirstPublicKey($this->model->base_url);
+                // For backwards compatibility, also set jwt_public_key to the first discovered key.
+                // If discovery fails temporarily, fall back to the stored manual key if present.
+                $config['jwt_public_key'] = !empty($discoveredKeys)
+                    ? JWKSDiscovery::getFirstPublicKey($this->model->base_url)
+                    : ($this->model->jwt_public_key ?: null);
             } else {
                 $config['jwt_public_key'] = $this->model->jwt_public_key;
             }
