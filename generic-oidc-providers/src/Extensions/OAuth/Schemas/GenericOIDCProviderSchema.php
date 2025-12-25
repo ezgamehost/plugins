@@ -57,16 +57,9 @@ final class GenericOIDCProviderSchema extends OAuthSchema
                     $discoveredKeys = [];
                 }
 
-                $firstDiscoveredKey = JWKSDiscovery::getFirstPublicKey($this->model->base_url);
+                // Avoid redundant JWKS fetch: derive the first key from the already-discovered set.
+                $firstDiscoveredKey = !empty($discoveredKeys) ? reset($discoveredKeys) : null;
                 if (!is_string($firstDiscoveredKey) || $firstDiscoveredKey === '') {
-                    if (!empty($discoveredKeys)) {
-                        Log::error('OIDC JWKS discovery failed: first public key could not be resolved', [
-                            'provider_id' => $this->model->id,
-                            'base_url' => $this->model->base_url,
-                            'jwks_uri' => $jwksUri,
-                            'key_count' => count($discoveredKeys),
-                        ]);
-                    }
                     $firstDiscoveredKey = null;
                 }
 
