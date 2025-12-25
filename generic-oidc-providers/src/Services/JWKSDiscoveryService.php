@@ -20,6 +20,18 @@ class JWKSDiscoveryService
     protected int $jwksCacheDuration = 60;
 
     /**
+     * Cache key version, used to avoid legacy cached nulls.
+     */
+    protected string $cacheKeyVersion = 'v2';
+
+    /**
+     * Short backoff when remote fetch fails, in seconds.
+     *
+     * Prevents request storms during brief outages while avoiding long auth outages.
+     */
+    protected int $failureBackoffSeconds = 30;
+
+    /**
      * Get the OpenID Configuration from the provider.
      *
      * @return array<string, mixed>|null
@@ -28,25 +40,47 @@ class JWKSDiscoveryService
     {
         $baseUrl = rtrim($baseUrl, '/');
         $configUrl = $baseUrl . '/.well-known/openid-configuration';
-        $cacheKey = 'oidc_config:' . md5($configUrl);
+        $cacheKey = $this->getOpenIdConfigCacheKey($configUrl);
+        $failureKey = $this->getFailureBackoffCacheKey($cacheKey);
 
-        return Cache::remember($cacheKey, now()->addMinutes($this->configCacheDuration), function () use ($configUrl) {
-            try {
-                $response = Http::timeout(10)
-                    ->connectTimeout(5)
-                    ->throw()
-                    ->get($configUrl);
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
 
-                return $response->json();
-            } catch (Exception $e) {
-                Log::error('Failed to fetch OpenID Configuration', [
+        if (Cache::get($failureKey) === true) {
+            return null;
+        }
+
+        try {
+            $response = Http::timeout(10)
+                ->connectTimeout(5)
+                ->throw()
+                ->get($configUrl);
+
+            $json = $response->json();
+            if (!is_array($json)) {
+                Log::error('OpenID Configuration response was not JSON object/array', [
                     'url' => $configUrl,
-                    'error' => $e->getMessage(),
                 ]);
 
+                Cache::put($failureKey, true, now()->addSeconds($this->failureBackoffSeconds));
                 return null;
             }
-        });
+
+            Cache::put($cacheKey, $json, now()->addMinutes($this->configCacheDuration));
+            Cache::forget($failureKey);
+
+            return $json;
+        } catch (Exception $e) {
+            Log::error('Failed to fetch OpenID Configuration', [
+                'url' => $configUrl,
+                'error' => $e->getMessage(),
+            ]);
+
+            Cache::put($failureKey, true, now()->addSeconds($this->failureBackoffSeconds));
+            return null;
+        }
     }
 
     /**
@@ -76,25 +110,47 @@ class JWKSDiscoveryService
             return null;
         }
 
-        $cacheKey = 'oidc_jwks:' . md5($jwksUri);
+        $cacheKey = $this->getJwksCacheKey($jwksUri);
+        $failureKey = $this->getFailureBackoffCacheKey($cacheKey);
 
-        return Cache::remember($cacheKey, now()->addMinutes($this->jwksCacheDuration), function () use ($jwksUri) {
-            try {
-                $response = Http::timeout(10)
-                    ->connectTimeout(5)
-                    ->throw()
-                    ->get($jwksUri);
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
 
-                return $response->json();
-            } catch (Exception $e) {
-                Log::error('Failed to fetch JWKS', [
+        if (Cache::get($failureKey) === true) {
+            return null;
+        }
+
+        try {
+            $response = Http::timeout(10)
+                ->connectTimeout(5)
+                ->throw()
+                ->get($jwksUri);
+
+            $json = $response->json();
+            if (!is_array($json)) {
+                Log::error('JWKS response was not JSON object/array', [
                     'uri' => $jwksUri,
-                    'error' => $e->getMessage(),
                 ]);
 
+                Cache::put($failureKey, true, now()->addSeconds($this->failureBackoffSeconds));
                 return null;
             }
-        });
+
+            Cache::put($cacheKey, $json, now()->addMinutes($this->jwksCacheDuration));
+            Cache::forget($failureKey);
+
+            return $json;
+        } catch (Exception $e) {
+            Log::error('Failed to fetch JWKS', [
+                'uri' => $jwksUri,
+                'error' => $e->getMessage(),
+            ]);
+
+            Cache::put($failureKey, true, now()->addSeconds($this->failureBackoffSeconds));
+            return null;
+        }
     }
 
     /**
@@ -309,11 +365,40 @@ class JWKSDiscoveryService
         $baseUrl = rtrim($baseUrl, '/');
         $configUrl = $baseUrl . '/.well-known/openid-configuration';
 
+        // Clear both legacy and current-version keys.
         Cache::forget('oidc_config:' . md5($configUrl));
+        Cache::forget($this->getOpenIdConfigCacheKey($configUrl));
+        Cache::forget($this->getFailureBackoffCacheKey($this->getOpenIdConfigCacheKey($configUrl)));
 
         $jwksUri = $this->getJWKSUri($baseUrl);
         if ($jwksUri) {
             Cache::forget('oidc_jwks:' . md5($jwksUri));
+            Cache::forget($this->getJwksCacheKey($jwksUri));
+            Cache::forget($this->getFailureBackoffCacheKey($this->getJwksCacheKey($jwksUri)));
         }
+    }
+
+    /**
+     * @internal
+     */
+    protected function getOpenIdConfigCacheKey(string $configUrl): string
+    {
+        return 'oidc_config:' . $this->cacheKeyVersion . ':' . md5($configUrl);
+    }
+
+    /**
+     * @internal
+     */
+    protected function getJwksCacheKey(string $jwksUri): string
+    {
+        return 'oidc_jwks:' . $this->cacheKeyVersion . ':' . md5($jwksUri);
+    }
+
+    /**
+     * @internal
+     */
+    protected function getFailureBackoffCacheKey(string $successCacheKey): string
+    {
+        return $successCacheKey . ':fetch_failed';
     }
 }
